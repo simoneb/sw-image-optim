@@ -1,6 +1,8 @@
 import React, { Component } from 'react';
 import './App.css';
 
+import Image from './Image'
+
 class App extends Component {
   render() {
     return (
@@ -9,7 +11,7 @@ class App extends Component {
           <p>
             Edit <code>src/App.js</code> and save to reload.
           </p>
-          <img src="sample.jpg" width={400} alt="dog" />
+          <Image id="FIRST" src="sample.jpg" style={{width: '100vw'}} alt="dog" />
           <img src="dog.jpg" width={400} alt="dog" />
         </header>
       </div>

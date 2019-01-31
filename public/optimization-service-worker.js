@@ -1,18 +1,58 @@
+/* eslint-disable no-restricted-globals */
 // inspired by https://calendar.perfplanet.com/2018/dynamic-resources-browser-network-device-memory/
 
 console.log('Service worker running')
 
-self.addEventListener('fetch', event => {
-  if (/\.jpg$|.png$|.gif$/.test(event.request.url)) {
-    event.respondWith(fetchImage(event.request));
+self.addEventListener('install', event => {
+  console.log('Service worker installed')
+  const data = new URL(self.location).searchParams.get('data')
+
+  self.data = JSON.parse(data)
+})
+
+self.addEventListener('activate', () => {
+  console.log('Service worker activated')
+})
+
+self.addEventListener('message', event => {
+  event.ports[0].postMessage('hey!')
+})
+
+self.addEventListener('fetch', async event => {
+  if (event.request.destination === 'image') {
+    event.respondWith(fetchImage(event))
   }  
 })
 
-async function fetchImage(request) {
-  const {pathname: imageName} = new URL(request.url)
-    const quality = shouldReturnLowQuality(request) ? 'q_10' : 'q_auto'
+const findBreakpoint = goal => self.data
+.reduce((prev, curr) => Math.abs(curr - goal) < Math.abs(prev - goal) ? curr : prev);
 
-    const cloudinaryUrl = `https://res.cloudinary.com/simone/image/upload/${quality},f_auto${imageName}`;
+async function fetchImage(event) {
+  const url = new URL(event.request.url)
+
+  const size = await new Promise(async (resolve, reject) => {
+    const channel = new MessageChannel()
+
+    channel.port1.onmessage = event => resolve(event.data)
+
+    const client = await self.clients.get(event.clientId)
+
+    const id = Number(url.searchParams.get('id'))
+
+    client.postMessage({ 
+      type: 'IMG_SIZE_QUERY',
+      id
+    }, [channel.port2])
+  })
+
+  const width = size && findBreakpoint(size.width)
+
+  const {pathname: imageName} = url
+    const quality = shouldReturnLowQuality(event.request) ? 'q_10' : 'q_auto'
+
+    const cloudinaryUrl = `https://res.cloudinary.com/simone/image/upload/${quality}${width ? `,w_${width}` : ''},f_auto${imageName}`;
+
+    console.log('Requesting cloudinary image', cloudinaryUrl)
 
     const controller = new AbortController()
 
@@ -23,9 +63,9 @@ async function fetchImage(request) {
     try {
       const response = await fetchPromise
 
-      return response.ok ? fetchPromise : fetch(request.url)
+      return response.ok ? fetchPromise : fetch(event.request.url)
     } catch(err) {
-      return fetch(request.url)
+      return fetch(event.request.url)
     } finally {
       clearTimeout(timer)
     }
