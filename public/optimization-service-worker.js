@@ -1,74 +1,109 @@
 /* eslint-disable no-restricted-globals */
 // inspired by https://calendar.perfplanet.com/2018/dynamic-resources-browser-network-device-memory/
 
-console.log('Service worker running')
-
 self.addEventListener('install', event => {
   console.log('Service worker installed')
-  const data = new URL(self.location).searchParams.get('data')
+  const config = new URL(self.location).searchParams.get('config')
 
-  self.data = JSON.parse(data)
+  self.config = JSON.parse(config)
 })
 
 self.addEventListener('activate', () => {
   console.log('Service worker activated')
 })
 
-self.addEventListener('message', event => {
-  event.ports[0].postMessage('hey!')
-})
-
 self.addEventListener('fetch', async event => {
   if (event.request.destination === 'image') {
-    event.respondWith(fetchImage(event))
+    const url = new URL(event.request.url)
+    const imageId =  url.searchParams.get('__id')
+
+    if(!imageId) return
+
+    event.respondWith(fetchImage(event, url, imageId))
   }  
 })
 
-const findBreakpoint = goal => self.data
-.reduce((prev, curr) => Math.abs(curr - goal) < Math.abs(prev - goal) ? curr : prev);
+async function fetchImage(event, url, imageId) {
+  const { pathname: imageName } = url
+  
+  const size = await tryGetSize(event, imageId)
+  const width = size && findBreakpoint(size.width)  
+  const quality = shouldReturnLowQuality(event.request) ? 'q_10' : 'q_auto'
+  const imageUrl = `${self.config.baseCloudinaryUrl}/${quality}${width ? `,w_${width}` : ''},f_auto${imageName}`
 
-async function fetchImage(event) {
-  const url = new URL(event.request.url)
+  const client = await getClient(event)
 
-  const size = await new Promise(async (resolve, reject) => {
+  client.postMessage({
+    type: 'IMG_QUERY',
+    id: imageId,
+    originalUrl: event.request.url,
+    resolvedUrl: imageUrl,
+    quality,
+    detectedWidth: size && size.width,
+    width
+  })
+
+  const controller = new AbortController()
+  const fetchPromise = fetch(imageUrl, { signal: controller.signal })
+  const timer = setTimeout(() => controller.abort(), 5000)
+
+  try {
+    const response = await fetchPromise
+
+    if(response.ok) {
+      client.postMessage({
+        type: 'IMG_QUERY_SUCCESS',
+        id: imageId
+      })
+
+      return fetchPromise
+    }
+
+    client.postMessage({
+      type: 'IMG_QUERY_FAILURE',
+      id: imageId
+    })
+
+    return fetchOriginal(event)
+  } catch(err) {
+    client.postMessage({
+      type: 'IMG_QUERY_FAILURE',
+      id: imageId
+    })
+
+    return fetchOriginal(event)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function fetchOriginal(event) {
+  return fetch(event.request.url)
+}
+
+function tryGetSize(event, imageId) {
+  return new Promise(async (resolve, reject) => {
     const channel = new MessageChannel()
 
     channel.port1.onmessage = event => resolve(event.data)
 
-    const client = await self.clients.get(event.clientId)
-
-    const id = Number(url.searchParams.get('id'))
+    const client = await getClient(event)
 
     client.postMessage({ 
       type: 'IMG_SIZE_QUERY',
-      id
+      id: imageId
     }, [channel.port2])
   })
+}
 
-  const width = size && findBreakpoint(size.width)
+const findBreakpoint = target => 
+  self.config.breakpoints
+    .reduce((prev, curr) => 
+      Math.abs(curr - target) <= Math.abs(prev - target) ? curr : prev
+    )
 
-  const {pathname: imageName} = url
-    const quality = shouldReturnLowQuality(event.request) ? 'q_10' : 'q_auto'
-
-    const cloudinaryUrl = `https://res.cloudinary.com/simone/image/upload/${quality}${width ? `,w_${width}` : ''},f_auto${imageName}`;
-
-    console.log('Requesting cloudinary image', cloudinaryUrl)
-
-    const controller = new AbortController()
-
-    const fetchPromise = fetch(cloudinaryUrl, { signal: controller.signal });
-
-    const timer = setTimeout(() => controller.abort(), 5000)
-
-    try {
-      const response = await fetchPromise
-
-      return response.ok ? fetchPromise : fetch(event.request.url)
-    } catch(err) {
-      return fetch(event.request.url)
-    } finally {
-      clearTimeout(timer)
-    }
+async function getClient(event) {
+  return self.clients.get(event.clientId)
 }
 
 function shouldReturnLowQuality(request){
