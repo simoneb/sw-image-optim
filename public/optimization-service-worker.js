@@ -15,21 +15,23 @@ self.addEventListener('activate', () => {
 self.addEventListener('fetch', async event => {
   if (event.request.destination === 'image') {
     const url = new URL(event.request.url)
-    const imageId =  url.searchParams.get('__id')
+    const imageId = url.searchParams.get('__id')
 
-    if(!imageId) return
+    if (!imageId) return
 
     event.respondWith(fetchImage(event, url, imageId))
-  }  
+  }
 })
 
 async function fetchImage(event, url, imageId) {
   const { pathname: imageName } = url
-  
+
   const size = await tryGetSize(event, imageId)
-  const width = size && findBreakpoint(size.width)  
+  const width = size && findBreakpoint(size.width)
   const quality = shouldReturnLowQuality(event.request) ? 'q_10' : 'q_auto'
-  const imageUrl = `${self.config.baseCloudinaryUrl}/${quality}${width ? `,w_${width}` : ''},f_auto${imageName}`
+  const imageUrl = `${self.config.baseCloudinaryUrl}/${quality}${
+    width ? `,w_${width}` : ''
+  },f_auto${imageName}`
 
   const client = await getClient(event)
 
@@ -50,7 +52,7 @@ async function fetchImage(event, url, imageId) {
   try {
     const response = await fetchPromise
 
-    if(response.ok) {
+    if (response.ok) {
       client.postMessage({
         type: 'IMG_QUERY_SUCCESS',
         id: imageId
@@ -65,7 +67,7 @@ async function fetchImage(event, url, imageId) {
     })
 
     return fetchOriginal(event)
-  } catch(err) {
+  } catch (err) {
     client.postMessage({
       type: 'IMG_QUERY_FAILURE',
       id: imageId
@@ -89,30 +91,33 @@ function tryGetSize(event, imageId) {
 
     const client = await getClient(event)
 
-    client.postMessage({ 
-      type: 'IMG_SIZE_QUERY',
-      id: imageId
-    }, [channel.port2])
+    client.postMessage(
+      {
+        type: 'IMG_SIZE_QUERY',
+        id: imageId
+      },
+      [channel.port2]
+    )
   })
 }
 
-const findBreakpoint = target => 
-  self.config.breakpoints
-    .reduce((prev, curr) => 
-      Math.abs(curr - target) <= Math.abs(prev - target) ? curr : prev
-    )
+const findBreakpoint = target =>
+  self.config.breakpoints.reduce((prev, curr) =>
+    Math.abs(curr - target) <= Math.abs(prev - target) ? curr : prev
+  )
 
 async function getClient(event) {
   return self.clients.get(event.clientId)
 }
 
-function shouldReturnLowQuality(request){
-  if ( (request.headers.get('save-data')) // Save Data is on
-    || (navigator.connection.effectiveType.match(/2g/)) // Looks like a 2G connection
-    || (navigator.deviceMemory < 1) // We have less than 1G of RAM
-  ){
-    return true;
+function shouldReturnLowQuality(request) {
+  if (
+    request.headers.get('save-data') || // Save Data is on
+    navigator.connection.effectiveType.match(/2g/) || // Looks like a 2G connection
+    navigator.deviceMemory < 1 // We have less than 1G of RAM
+  ) {
+    return true
   }
 
-  return false;
+  return false
 }
