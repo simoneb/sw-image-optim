@@ -6,8 +6,8 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
+        <Image src="nf.jpg" style={{ width: '80vw' }} alt="nf" />
         <Image src="dog.jpg" style={{ width: '80vw' }} alt="dog" />
-        <Image src="sample.jpg" width="600" alt="sample" />
       </header>
     </div>
   )
